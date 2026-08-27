@@ -77,7 +77,7 @@ def render_stamp(params, res_mm=0.1):
     """Render 2D stamp image from parameters."""
     diameter = params.get('diameter', 40.0)
     ring_width = params.get('ring_width', 1.2)
-    company = params.get('company_name', '上海逗号软件科技有限公司')
+    company = params.get('company_name', '上海锦绣科技有限公司')
     reg_num = params.get('reg_number', '3201041477313')
     text_radius = params.get('text_radius', 15.5)
     text_size = params.get('text_size', 4.5)
@@ -332,50 +332,42 @@ HTML_TEMPLATE = r"""
 <title>公章 STL 生成器</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: #f5f5f7;
     color: #1d1d1f;
-    padding: 20px;
   }
   .container {
-    max-width: 1200px;
-    margin: 0 auto;
+    height: 100vh;
     display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 24px;
-  }
-  h1 {
-    font-size: 24px;
-    margin-bottom: 20px;
-    grid-column: 1 / -1;
+    grid-template-columns: 1fr 360px;
   }
   .preview-panel {
-    background: white;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16px;
-    min-height: 500px;
+    justify-content: center;
+    padding: 20px;
+    height: 100vh;
+    overflow: hidden;
   }
   .preview-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 20px;
+    gap: 24px;
     width: 100%;
+    max-width: 720px;
   }
   .preview-item {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
   .preview-label {
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 14px;
+    font-weight: 600;
     color: #424245;
     display: flex;
     align-items: center;
@@ -391,58 +383,84 @@ HTML_TEMPLATE = r"""
     align-items: center;
     gap: 4px;
   }
-  .checkbox-label input {
-    cursor: pointer;
-  }
+  .checkbox-label input { cursor: pointer; }
   .preview-canvas {
     width: 100%;
-    max-width: 280px;
+    max-width: 340px;
     aspect-ratio: 1;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    background: #fafafa;
-  }
-  .preview-canvas.stamp {
+    border: 1px solid #d8d8dd;
+    border-radius: 12px;
     background: #1a1a1a;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
   }
   .preview-canvas.impression {
     background: #f5f0e6;
-    box-shadow: inset 0 2px 10px rgba(0,0,0,0.08);
+    box-shadow: inset 0 2px 10px rgba(0,0,0,0.08), 0 4px 20px rgba(0,0,0,0.1);
   }
   .preview-info {
     font-size: 13px;
     color: #86868b;
     text-align: center;
+    margin-top: 16px;
   }
   .controls-panel {
     background: white;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    max-height: calc(100vh - 80px);
+    border-left: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  .controls-header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    flex-shrink: 0;
+  }
+  .controls-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .controls-scroll {
+    flex: 1;
     overflow-y: auto;
+    padding: 4px 20px;
   }
   .section {
-    margin-bottom: 24px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid #f5f5f5;
   }
   .section:last-child { border-bottom: none; }
-  .section h3 {
-    font-size: 15px;
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    cursor: pointer;
+    user-select: none;
+  }
+  .section-header h3 {
+    font-size: 14px;
     font-weight: 600;
-    margin-bottom: 14px;
     color: #1d1d1f;
   }
-  .control {
-    margin-bottom: 14px;
+  .section-arrow {
+    font-size: 12px;
+    color: #86868b;
+    transition: transform 0.2s;
   }
+  .section.collapsed .section-arrow { transform: rotate(-90deg); }
+  .section-content {
+    padding-bottom: 10px;
+  }
+  .section.collapsed .section-content { display: none; }
+  .control {
+    margin-bottom: 10px;
+  }
+  .control:last-child { margin-bottom: 0; }
   .control label {
     display: flex;
     justify-content: space-between;
     font-size: 13px;
     color: #424245;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
   .control label .val {
     font-weight: 500;
@@ -461,50 +479,50 @@ HTML_TEMPLATE = r"""
   .control input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: #0071e3;
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
   }
   .control input[type="text"] {
     width: 100%;
-    padding: 8px 12px;
+    padding: 6px 10px;
     border: 1px solid #d2d2d7;
     border-radius: 6px;
     font-size: 13px;
     outline: none;
     transition: border-color 0.2s;
   }
-  .control input[type="text"]:focus {
-    border-color: #0071e3;
+  .control input[type="text"]:focus { border-color: #0071e3; }
+  .controls-footer {
+    padding: 12px 20px;
+    border-top: 1px solid #e0e0e0;
+    background: #fafafa;
+    flex-shrink: 0;
   }
   .generate-btn {
     width: 100%;
-    padding: 14px;
+    padding: 12px;
     background: #0071e3;
     color: white;
     border: none;
     border-radius: 10px;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: background 0.2s;
   }
   .generate-btn:hover { background: #0077ed; }
-  .generate-btn:disabled {
-    background: #a8a8a8;
-    cursor: not-allowed;
-  }
+  .generate-btn:disabled { background: #a8a8a8; cursor: not-allowed; }
   .btn-row {
     display: flex;
     gap: 8px;
-    margin-top: 16px;
+    margin-top: 8px;
   }
   .btn-secondary {
     flex: 1;
-    padding: 10px;
+    padding: 8px;
     background: #e8e8ed;
     color: #1d1d1f;
     border: none;
@@ -515,7 +533,7 @@ HTML_TEMPLATE = r"""
   }
   .btn-secondary:hover { background: #d8d8dd; }
   .hint {
-    font-size: 12px;
+    font-size: 11px;
     color: #86868b;
     margin-top: 4px;
     line-height: 1.4;
@@ -524,13 +542,11 @@ HTML_TEMPLATE = r"""
 </head>
 <body>
 <div class="container">
-  <h1>公章 STL 生成器</h1>
-
   <div class="preview-panel">
     <div class="preview-row">
       <div class="preview-item">
         <div class="preview-label">印章面（3D打印面）</div>
-        <canvas id="canvasStamp" class="preview-canvas stamp"></canvas>
+        <canvas id="canvasStamp" class="preview-canvas"></canvas>
       </div>
       <div class="preview-item">
         <div class="preview-label">
@@ -544,111 +560,129 @@ HTML_TEMPLATE = r"""
   </div>
 
   <div class="controls-panel">
-    <div class="section">
-      <h3>基本信息</h3>
-      <div class="control">
-        <label>公司名称</label>
-        <input type="text" id="company_name" value="上海逗号软件科技有限公司">
-      </div>
-      <div class="control">
-        <label>注册号</label>
-        <input type="text" id="reg_number" value="3201041477313">
-      </div>
+    <div class="controls-header">
+      <h2>参数设置</h2>
     </div>
+    <div class="controls-scroll">
+      <div class="section">
+        <div class="section-header"><h3>基本信息</h3><span class="section-arrow">▼</span></div>
+        <div class="section-content">
+          <div class="control">
+            <label>公司名称</label>
+            <input type="text" id="company_name" value="上海锦绣科技有限公司">
+          </div>
+          <div class="control">
+            <label>注册号</label>
+            <input type="text" id="reg_number" value="3201041477313">
+          </div>
+        </div>
+      </div>
 
-    <div class="section">
-      <h3>印章尺寸</h3>
-      <div class="control">
-        <label>直径 <span class="val" id="diameter_val">40.0 mm</span></label>
-        <input type="range" id="diameter" min="20" max="60" step="0.5" value="40">
+      <div class="section">
+        <div class="section-header"><h3>印章尺寸</h3><span class="section-arrow">▼</span></div>
+        <div class="section-content">
+          <div class="control">
+            <label>直径 <span class="val" id="diameter_val">40.0 mm</span></label>
+            <input type="range" id="diameter" min="20" max="60" step="0.5" value="40">
+          </div>
+          <div class="control">
+            <label>底座厚度 <span class="val" id="base_h_val">3.0 mm</span></label>
+            <input type="range" id="base_h" min="1" max="8" step="0.5" value="3">
+          </div>
+          <div class="control">
+            <label>边框宽度 <span class="val" id="ring_width_val">1.2 mm</span></label>
+            <input type="range" id="ring_width" min="0.5" max="3" step="0.1" value="1.2">
+          </div>
+        </div>
       </div>
-      <div class="control">
-        <label>底座厚度 <span class="val" id="base_h_val">3.0 mm</span></label>
-        <input type="range" id="base_h" min="1" max="8" step="0.5" value="3">
-      </div>
-      <div class="control">
-        <label>边框宽度 <span class="val" id="ring_width_val">1.2 mm</span></label>
-        <input type="range" id="ring_width" min="0.5" max="3" step="0.1" value="1.2">
-      </div>
-    </div>
 
-    <div class="section">
-      <h3>公司名称（上弧）</h3>
-      <div class="control">
-        <label>字号 <span class="val" id="text_size_val">4.5 mm</span></label>
-        <input type="range" id="text_size" min="2" max="7" step="0.1" value="4.5">
+      <div class="section">
+        <div class="section-header"><h3>公司名称（上弧）</h3><span class="section-arrow">▼</span></div>
+        <div class="section-content">
+          <div class="control">
+            <label>字号 <span class="val" id="text_size_val">4.5 mm</span></label>
+            <input type="range" id="text_size" min="2" max="7" step="0.1" value="4.5">
+          </div>
+          <div class="control">
+            <label>文字高度 <span class="val" id="text_height_val">1.00x</span></label>
+            <input type="range" id="text_height" min="0.5" max="1.5" step="0.05" value="1">
+          </div>
+          <div class="control">
+            <label>弧形半径 <span class="val" id="text_radius_val">15.5 mm</span></label>
+            <input type="range" id="text_radius" min="8" max="18" step="0.2" value="15.5">
+          </div>
+          <div class="control">
+            <label>起始角度 <span class="val" id="text_start_val">260°</span></label>
+            <input type="range" id="text_start" min="180" max="330" step="1" value="260">
+          </div>
+          <div class="control">
+            <label>弧形跨度 <span class="val" id="text_span_val">200°</span></label>
+            <input type="range" id="text_span" min="60" max="280" step="1" value="200">
+          </div>
+        </div>
       </div>
-      <div class="control">
-        <label>文字高度 <span class="val" id="text_height_val">1.00x</span></label>
-        <input type="range" id="text_height" min="0.5" max="1.5" step="0.05" value="1">
-      </div>
-      <div class="control">
-        <label>弧形半径 <span class="val" id="text_radius_val">15.5 mm</span></label>
-        <input type="range" id="text_radius" min="8" max="18" step="0.2" value="15.5">
-      </div>
-      <div class="control">
-        <label>起始角度 <span class="val" id="text_start_val">260°</span></label>
-        <input type="range" id="text_start" min="180" max="330" step="1" value="260">
-      </div>
-      <div class="control">
-        <label>弧形跨度 <span class="val" id="text_span_val">200°</span></label>
-        <input type="range" id="text_span" min="60" max="280" step="1" value="200">
-      </div>
-    </div>
 
-    <div class="section">
-      <h3>注册号（下弧）</h3>
-      <div class="control">
-        <label>字号 <span class="val" id="num_size_val">2.2 mm</span></label>
-        <input type="range" id="num_size" min="1" max="5" step="0.1" value="2.2">
+      <div class="section collapsed">
+        <div class="section-header"><h3>注册号（下弧）</h3><span class="section-arrow">▼</span></div>
+        <div class="section-content">
+          <div class="control">
+            <label>字号 <span class="val" id="num_size_val">2.2 mm</span></label>
+            <input type="range" id="num_size" min="1" max="5" step="0.1" value="2.2">
+          </div>
+          <div class="control">
+            <label>弧形半径 <span class="val" id="num_radius_val">16.0 mm</span></label>
+            <input type="range" id="num_radius" min="8" max="18" step="0.2" value="16">
+          </div>
+          <div class="control">
+            <label>起始角度 <span class="val" id="num_start_val">140°</span></label>
+            <input type="range" id="num_start" min="90" max="180" step="1" value="140">
+          </div>
+          <div class="control">
+            <label>弧形跨度 <span class="val" id="num_span_val">80°</span></label>
+            <input type="range" id="num_span" min="30" max="150" step="1" value="80">
+          </div>
+        </div>
       </div>
-      <div class="control">
-        <label>弧形半径 <span class="val" id="num_radius_val">16.0 mm</span></label>
-        <input type="range" id="num_radius" min="8" max="18" step="0.2" value="16">
-      </div>
-      <div class="control">
-        <label>起始角度 <span class="val" id="num_start_val">140°</span></label>
-        <input type="range" id="num_start" min="90" max="180" step="1" value="140">
-      </div>
-      <div class="control">
-        <label>弧形跨度 <span class="val" id="num_span_val">80°</span></label>
-        <input type="range" id="num_span" min="30" max="150" step="1" value="80">
-      </div>
-    </div>
 
-    <div class="section">
-      <h3>五角星</h3>
-      <div class="control">
-        <label>外接圆半径 <span class="val" id="star_r_val">7.0 mm</span></label>
-        <input type="range" id="star_r" min="3" max="12" step="0.2" value="7">
+      <div class="section collapsed">
+        <div class="section-header"><h3>五角星</h3><span class="section-arrow">▼</span></div>
+        <div class="section-content">
+          <div class="control">
+            <label>外接圆半径 <span class="val" id="star_r_val">7.0 mm</span></label>
+            <input type="range" id="star_r" min="3" max="12" step="0.2" value="7">
+          </div>
+        </div>
       </div>
-    </div>
 
-    <div class="section">
-      <h3>打印优化</h3>
-      <div class="control">
-        <label>STL 精度 <span class="val" id="resolution_val">0.05 mm</span></label>
-        <input type="range" id="resolution" min="0.02" max="0.1" step="0.01" value="0.05">
+      <div class="section collapsed">
+        <div class="section-header"><h3>打印优化</h3><span class="section-arrow">▼</span></div>
+        <div class="section-content">
+          <div class="control">
+            <label>STL 精度 <span class="val" id="resolution_val">0.05 mm</span></label>
+            <input type="range" id="resolution" min="0.02" max="0.1" step="0.01" value="0.05">
+          </div>
+          <div class="control">
+            <label>凸起高度 <span class="val" id="feat_h_val">1.0 mm</span></label>
+            <input type="range" id="feat_h" min="0.3" max="3" step="0.1" value="1">
+          </div>
+          <div class="control">
+            <label>笔画加粗 <span class="val" id="stroke_thicken_val">0.40 mm</span></label>
+            <input type="range" id="stroke_thicken" min="0" max="0.8" step="0.05" value="0.4">
+          </div>
+          <p class="hint">STL 精度越细文字越清晰，建议 0.04-0.05mm。加粗笔画防止切片缺边少角（0.04mm 喷头建议 0.4mm+）。</p>
+        </div>
       </div>
-      <div class="control">
-        <label>凸起高度 <span class="val" id="feat_h_val">1.0 mm</span></label>
-        <input type="range" id="feat_h" min="0.3" max="3" step="0.1" value="1">
-      </div>
-      <div class="control">
-        <label>笔画加粗 <span class="val" id="stroke_thicken_val">0.40 mm</span></label>
-        <input type="range" id="stroke_thicken" min="0" max="0.8" step="0.05" value="0.4">
-      </div>
-      <p class="hint">STL 精度越细文字越清晰，建议 0.04-0.05mm。加粗笔画防止切片缺边少角（0.04mm 喷头建议 0.4mm+）。</p>
     </div>
-
-    <button class="generate-btn" id="generateBtn">生成 STL 文件</button>
-    <div class="btn-row">
-      <button class="btn-secondary" id="downloadImgBtn">下载盖印图片</button>
-      <button class="btn-secondary" id="resetBtn">恢复默认</button>
+    <div class="controls-footer">
+      <button class="generate-btn" id="generateBtn">生成 STL 文件</button>
+      <div class="btn-row">
+        <button class="btn-secondary" id="downloadImgBtn">下载盖印图片</button>
+        <button class="btn-secondary" id="resetBtn">恢复默认</button>
+      </div>
+      <p class="hint" style="margin-top:8px;">
+        提示：角度 0° 为顶部（12点方向），顺时针增加。文字已自动镜像，打印后盖印即为正向可读。
+      </p>
     </div>
-    <p class="hint" style="margin-top:12px;">
-      提示：角度 0° 为顶部（12点方向），顺时针增加。文字已自动镜像，打印后盖印即为正向可读。
-    </p>
   </div>
 </div>
 
@@ -664,10 +698,9 @@ const downloadImgBtn = document.getElementById('downloadImgBtn');
 
 let debounceTimer = null;
 let isGenerating = false;
-let noiseData = null;  // cached noise pattern
 
 const defaultParams = {
-  company_name: '上海逗号软件科技有限公司',
+  company_name: '上海锦绣科技有限公司',
   reg_number: '3201041477313',
   diameter: 40,
   base_h: 3,
@@ -686,6 +719,13 @@ const defaultParams = {
   star_r: 7,
   stroke_thicken: 0.4
 };
+
+// Section collapse toggle
+document.querySelectorAll('.section-header').forEach(header => {
+  header.addEventListener('click', () => {
+    header.parentElement.classList.toggle('collapsed');
+  });
+});
 
 function getParams() {
   return {
@@ -731,13 +771,11 @@ function updateLabels() {
 }
 
 function drawImpressionEffect(sourceImg, width, height) {
-  // Create offscreen canvas for processing
   const off = document.createElement('canvas');
   off.width = width;
   off.height = height;
   const octx = off.getContext('2d');
 
-  // 1. Draw paper background (warm off-white with subtle texture)
   const paperGrad = octx.createRadialGradient(
     width/2, height/2, width*0.1,
     width/2, height/2, width*0.7
@@ -747,39 +785,30 @@ function drawImpressionEffect(sourceImg, width, height) {
   octx.fillStyle = paperGrad;
   octx.fillRect(0, 0, width, height);
 
-  // 2. Draw source image as alpha mask for red stamp
-  // First draw source to get alpha
   octx.globalCompositeOperation = 'source-over';
   octx.drawImage(sourceImg, 0, 0);
 
-  // Get image data to process
   const imgData = octx.getImageData(0, 0, width, height);
   const data = imgData.data;
 
-  // 3. Generate noise-based stamp effect
-  const stampRed = { r: 210, g: 25, b: 25 };  // deep stamp red
-  const stampRed2 = { r: 230, g: 50, b: 50 };  // lighter red
+  const stampRed = { r: 210, g: 25, b: 25 };
+  const stampRed2 = { r: 230, g: 50, b: 50 };
 
   for (let i = 0; i < data.length; i += 4) {
-    const mask = data[i] / 255;  // white = stamp area (mask=1)
+    const mask = data[i] / 255;
     if (mask > 0.01) {
-      // Random noise for uneven ink distribution
       const noise = Math.random();
-      // Base opacity varies
       const opacity = mask * (0.75 + noise * 0.25);
-      // Color variation
       const colorMix = Math.random();
       const r = stampRed.r + (stampRed2.r - stampRed.r) * colorMix;
       const g = stampRed.g + (stampRed2.g - stampRed.g) * colorMix;
       const b = stampRed.b + (stampRed2.b - stampRed.b) * colorMix;
-      // Some spots are missing (ink gap)
       const gap = Math.random() < 0.03 ? 0.3 : 1;
       data[i] = r * opacity * gap;
       data[i+1] = g * opacity * gap;
       data[i+2] = b * opacity * gap;
       data[i+3] = 255;
     } else {
-      // Paper area - add subtle fiber noise
       const fiber = (Math.random() - 0.5) * 12;
       data[i] = Math.min(255, Math.max(0, 250 + fiber));
       data[i+1] = Math.min(255, Math.max(0, 242 + fiber));
@@ -790,7 +819,6 @@ function drawImpressionEffect(sourceImg, width, height) {
 
   octx.putImageData(imgData, 0, 0);
 
-  // 4. Slight blur for that "stamped" softness
   const blurCanvas = document.createElement('canvas');
   blurCanvas.width = width;
   blurCanvas.height = height;
@@ -849,16 +877,13 @@ async function updatePreview() {
       const w = img.width;
       const h = img.height;
 
-      // 1. Stamp face preview (mirrored, white on dark)
       canvasStamp.width = w;
       canvasStamp.height = h;
       ctxStamp.drawImage(img, 0, 0);
 
-      // 2. Impression effect (re-mirrored to normal, red on paper)
       canvasImpression.width = w;
       canvasImpression.height = h;
 
-      // Flip back to normal (undo mirror) for impression view
       const flip = document.createElement('canvas');
       flip.width = w;
       flip.height = h;
@@ -889,14 +914,12 @@ function scheduleUpdate() {
   debounceTimer = setTimeout(updatePreview, 80);
 }
 
-// localStorage: save all params
 function saveParams() {
   const params = getParams();
   params.paperEffect = document.getElementById('paperEffect').checked;
   try { localStorage.setItem('stamp_params', JSON.stringify(params)); } catch(e) {}
 }
 
-// localStorage: restore all params
 function restoreParams() {
   try {
     const saved = localStorage.getItem('stamp_params');
@@ -913,15 +936,12 @@ function restoreParams() {
   } catch(e) {}
 }
 
-// Bind all sliders and text inputs
 document.querySelectorAll('input[type="range"], input[type="text"]').forEach(el => {
   el.addEventListener('input', scheduleUpdate);
 });
 
-// Bind checkbox
 document.getElementById('paperEffect').addEventListener('change', scheduleUpdate);
 
-// Generate STL
 generateBtn.addEventListener('click', async () => {
   if (isGenerating) return;
   isGenerating = true;
@@ -953,7 +973,6 @@ generateBtn.addEventListener('click', async () => {
   }
 });
 
-// Download impression image
 downloadImgBtn.addEventListener('click', () => {
   const link = document.createElement('a');
   const ts = new Date().toISOString().slice(0, 10);
@@ -962,7 +981,6 @@ downloadImgBtn.addEventListener('click', () => {
   link.click();
 });
 
-// Reset
 resetBtn.addEventListener('click', () => {
   for (const key in defaultParams) {
     const el = document.getElementById(key);
@@ -975,7 +993,6 @@ resetBtn.addEventListener('click', () => {
   scheduleUpdate();
 });
 
-// Restore saved settings then initial render
 restoreParams();
 updateLabels();
 updatePreview();
