@@ -47,7 +47,7 @@ def draw_star(draw, cx, cy, r_out, r_in):
 
 
 def draw_arc_text(img, cx, cy, text, font, tile, arc_r_px,
-                  arc_start, arc_span, clockwise=True, inward=False):
+                  arc_start, arc_span, clockwise=True, inward=False, v_scale=1.0):
     n = len(text)
     for i, ch in enumerate(text):
         t = i / (n - 1) if n > 1 else 0.5
@@ -63,6 +63,10 @@ def draw_arc_text(img, cx, cy, text, font, tile, arc_r_px,
         cd.text(((tile - w) / 2 - bbox[0], (tile - h) / 2 - bbox[1]),
                 ch, fill=255, font=font)
 
+        if v_scale != 1.0:
+            new_h = max(1, int(tile * v_scale))
+            ci = ci.resize((tile, new_h), Image.LANCZOS)
+
         rot = (180.0 - angle) if inward else (-angle)
         rotated = ci.rotate(rot, expand=True, resample=Image.BICUBIC)
         rx, ry = rotated.size
@@ -70,11 +74,7 @@ def draw_arc_text(img, cx, cy, text, font, tile, arc_r_px,
 
 
 def render_stamp(params, res_mm=0.1):
-    """Render 2D stamp image from parameters.
-    Returns: (combined_image, text_only_image)
-    - combined: all features (ring + star + text + number)
-    - text_only: just text + number (for separate 3D height)
-    """
+    """Render 2D stamp image from parameters."""
     diameter = params.get('diameter', 40.0)
     ring_width = params.get('ring_width', 1.2)
     company = params.get('company_name', '上海逗号软件科技有限公司')
@@ -89,57 +89,51 @@ def render_stamp(params, res_mm=0.1):
     num_span = params.get('num_span', 80.0)
     star_r = params.get('star_r', 7.0)
     stroke_thicken = params.get('stroke_thicken', 0.25)
+    text_height = params.get('text_height', 1.0)
 
     n = int(diameter / res_mm) + 1
     radius = diameter / 2.0
+    img = Image.new('L', (n, n), 0)
+    draw = ImageDraw.Draw(img)
     cx = cy = n / 2
 
-    # Render ring + star on base image
-    img_base = Image.new('L', (n, n), 0)
-    draw_base = ImageDraw.Draw(img_base)
+    # Ring border
     r_out = radius / res_mm
     r_in = (radius - ring_width) / res_mm
-    draw_base.ellipse([cx - r_out, cy - r_out, cx + r_out, cy + r_out], fill=255)
-    draw_base.ellipse([cx - r_in, cy - r_in, cx + r_in, cy + r_in], fill=0)
+    draw.ellipse([cx - r_out, cy - r_out, cx + r_out, cy + r_out], fill=255)
+    draw.ellipse([cx - r_in, cy - r_in, cx + r_in, cy + r_in], fill=0)
+
+    # Star
     s_out = star_r / res_mm
     s_in = s_out * math.sin(math.radians(18)) / math.sin(math.radians(126))
-    draw_star(draw_base, cx, cy, s_out, s_in)
+    draw_star(draw, cx, cy, s_out, s_in)
 
-    # Render text + number on separate image
-    img_text = Image.new('L', (n, n), 0)
+    # Company name (top arc, outward) with vertical scale
     font_px = max(8, int(text_size / res_mm))
     font = ImageFont.truetype(FONT_PATH, font_px)
-    draw_arc_text(img_text, cx, cy, company, font, font_px * 3,
+    draw_arc_text(img, cx, cy, company, font, font_px * 3,
                   text_radius / res_mm, text_start, text_span,
-                  clockwise=True, inward=False)
+                  clockwise=True, inward=False, v_scale=text_height)
+
+    # Registration number (bottom arc, inward) with vertical scale
     npx = max(6, int(num_size / res_mm))
     nfont = ImageFont.truetype(FONT_PATH, npx)
-    draw_arc_text(img_text, cx, cy, reg_num, nfont, npx * 3,
+    draw_arc_text(img, cx, cy, reg_num, nfont, npx * 3,
                   num_radius / res_mm, num_start, num_span,
-                  clockwise=True, inward=True)
+                  clockwise=True, inward=True, v_scale=text_height)
 
-    # Dilate both images
+    # Dilate features
     dilate_px = max(0, int(round(stroke_thicken / res_mm)))
     for _ in range(dilate_px):
-        img_base = img_base.filter(ImageFilter.MaxFilter(3))
-        img_text = img_text.filter(ImageFilter.MaxFilter(3))
-
-    # Combine for preview
-    arr_base = np.array(img_base)
-    arr_text = np.array(img_text)
-    img_combined = Image.fromarray(np.maximum(arr_base, arr_text).astype(np.uint8))
+        img = img.filter(ImageFilter.MaxFilter(3))
 
     # Flip for stamp face
-    img_combined = img_combined.transpose(Image.FLIP_LEFT_RIGHT)
-    img_text = img_text.transpose(Image.FLIP_LEFT_RIGHT)
-
-    return img_combined, img_text
+    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    return img
 
 
-def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.1, text_mask=None, text_height=None):
-    """Build a watertight mesh from 2D feature mask.
-    If text_mask and text_height are provided, text features get a different height.
-    """
+def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.1):
+    """Build a watertight mesh from 2D feature mask."""
     n = arr_2d.shape[0]
     radius = diameter / 2.0
     cx = cy = n / 2
@@ -151,8 +145,6 @@ def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.1, text_mask=None, tex
     hmap = np.zeros((n, n), dtype=np.float32)
     hmap[circle] = base_h
     hmap[arr_2d & circle] = base_h + feat_h
-    if text_mask is not None and text_height is not None:
-        hmap[text_mask & circle] = base_h + text_height
 
     # Vertices
     j_grid, i_grid = np.meshgrid(np.arange(n), np.arange(n))
@@ -286,7 +278,7 @@ def index():
 @app.route('/api/preview', methods=['POST'])
 def api_preview():
     params = request.get_json(force=True)
-    img, _ = render_stamp(params, res_mm=0.1)
+    img = render_stamp(params, res_mm=0.1)
     buf = io.BytesIO()
     img.save(buf, format='PNG')
     buf.seek(0)
@@ -299,14 +291,11 @@ def api_generate_stl():
     diameter = params.get('diameter', 40.0)
     base_h = params.get('base_h', 3.0)
     feat_h = params.get('feat_h', 1.0)
-    text_height = params.get('text_height', feat_h)
     res_mm = params.get('resolution', 0.1)
 
-    img_combined, img_text = render_stamp(params, res_mm=res_mm)
-    arr = np.array(img_combined) > 127
-    text_arr = np.array(img_text) > 127
-    verts, faces = build_mesh(arr, diameter, base_h, feat_h, res_mm=res_mm,
-                               text_mask=text_arr, text_height=text_height)
+    img = render_stamp(params, res_mm=res_mm)
+    arr = np.array(img) > 127
+    verts, faces = build_mesh(arr, diameter, base_h, feat_h, res_mm=res_mm)
 
     # Center at origin
     verts[:, 0] -= verts[:, 0].mean()
@@ -561,6 +550,10 @@ HTML_TEMPLATE = r"""
         <input type="range" id="text_size" min="2" max="7" step="0.1" value="4.5">
       </div>
       <div class="control">
+        <label>文字高度 <span class="val" id="text_height_val">1.00x</span></label>
+        <input type="range" id="text_height" min="0.5" max="1.5" step="0.05" value="1">
+      </div>
+      <div class="control">
         <label>弧形半径 <span class="val" id="text_radius_val">15.5 mm</span></label>
         <input type="range" id="text_radius" min="8" max="18" step="0.2" value="15.5">
       </div>
@@ -605,18 +598,14 @@ HTML_TEMPLATE = r"""
     <div class="section">
       <h3>打印优化</h3>
       <div class="control">
-        <label>边框/星高度 <span class="val" id="feat_h_val">1.0 mm</span></label>
+        <label>凸起高度 <span class="val" id="feat_h_val">1.0 mm</span></label>
         <input type="range" id="feat_h" min="0.3" max="3" step="0.1" value="1">
-      </div>
-      <div class="control">
-        <label>文字高度 <span class="val" id="text_height_val">1.5 mm</span></label>
-        <input type="range" id="text_height" min="0.3" max="3" step="0.1" value="1.5">
       </div>
       <div class="control">
         <label>笔画加粗 <span class="val" id="stroke_thicken_val">0.25 mm</span></label>
         <input type="range" id="stroke_thicken" min="0" max="0.6" step="0.05" value="0.25">
       </div>
-      <p class="hint">文字可单独设高，比边框/星更高以盖印更清晰。加粗笔画防止切片缺边少角（0.2-0.3mm 适配 0.4mm 喷嘴）。</p>
+      <p class="hint">加粗笔画可防止切片时文字缺边少角（0.2-0.3mm 适配 0.4mm 喷嘴）。</p>
     </div>
 
     <button class="generate-btn" id="generateBtn">生成 STL 文件</button>
@@ -648,7 +637,7 @@ const defaultParams = {
   diameter: 40,
   base_h: 3,
   feat_h: 1,
-  text_height: 1.5,
+  text_height: 1,
   ring_width: 1.2,
   text_size: 4.5,
   text_radius: 15.5,
@@ -689,7 +678,7 @@ function updateLabels() {
   document.getElementById('diameter_val').textContent = params.diameter.toFixed(1) + ' mm';
   document.getElementById('base_h_val').textContent = params.base_h.toFixed(1) + ' mm';
   document.getElementById('feat_h_val').textContent = params.feat_h.toFixed(1) + ' mm';
-  document.getElementById('text_height_val').textContent = params.text_height.toFixed(1) + ' mm';
+  document.getElementById('text_height_val').textContent = params.text_height.toFixed(2) + 'x';
   document.getElementById('ring_width_val').textContent = params.ring_width.toFixed(1) + ' mm';
   document.getElementById('text_size_val').textContent = params.text_size.toFixed(1) + ' mm';
   document.getElementById('text_radius_val').textContent = params.text_radius.toFixed(1) + ' mm';
@@ -813,7 +802,7 @@ async function updatePreview() {
       URL.revokeObjectURL(url);
     };
     img.src = url;
-    previewInfo.textContent = `直径 ${params.diameter.toFixed(1)}mm · 总高 ${Math.max(params.base_h + params.feat_h, params.base_h + params.text_height).toFixed(1)}mm`;
+    previewInfo.textContent = `直径 ${params.diameter.toFixed(1)}mm · 总高 ${(params.base_h + params.feat_h).toFixed(1)}mm`;
   } catch (e) {
     previewInfo.textContent = '预览加载失败';
   }
