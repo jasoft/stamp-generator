@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+*.stl
+*.png
+test_*.py
+generate_stamp*.py
+check_simplify.py
+fix_mesh.py
