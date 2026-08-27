@@ -367,6 +367,22 @@ HTML_TEMPLATE = r"""
     font-size: 13px;
     font-weight: 500;
     color: #424245;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .checkbox-label {
+    font-size: 12px;
+    font-weight: 400;
+    color: #666;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .checkbox-label input {
+    cursor: pointer;
   }
   .preview-canvas {
     width: 100%;
@@ -507,7 +523,10 @@ HTML_TEMPLATE = r"""
         <canvas id="canvasStamp" class="preview-canvas stamp"></canvas>
       </div>
       <div class="preview-item">
-        <div class="preview-label">盖印效果（纸上效果）</div>
+        <div class="preview-label">
+          盖印效果
+          <label class="checkbox-label"><input type="checkbox" id="paperEffect" checked> 模拟纸上效果</label>
+        </div>
         <canvas id="canvasImpression" class="preview-canvas impression"></canvas>
       </div>
     </div>
@@ -763,6 +782,39 @@ function drawImpressionEffect(sourceImg, width, height) {
   return blurCanvas;
 }
 
+function drawElectronicEffect(sourceImg, width, height) {
+  const off = document.createElement('canvas');
+  off.width = width;
+  off.height = height;
+  const octx = off.getContext('2d');
+
+  octx.fillStyle = '#ffffff';
+  octx.fillRect(0, 0, width, height);
+  octx.drawImage(sourceImg, 0, 0);
+
+  const imgData = octx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+  const r = 210, g = 25, b = 25;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const mask = data[i] / 255;
+    if (mask > 0.01) {
+      data[i] = r * mask;
+      data[i+1] = g * mask;
+      data[i+2] = b * mask;
+      data[i+3] = 255;
+    } else {
+      data[i] = 255;
+      data[i+1] = 255;
+      data[i+2] = 255;
+      data[i+3] = 255;
+    }
+  }
+
+  octx.putImageData(imgData, 0, 0);
+  return off;
+}
+
 async function updatePreview() {
   const params = getParams();
   try {
@@ -796,7 +848,10 @@ async function updatePreview() {
       fctx.scale(-1, 1);
       fctx.drawImage(img, 0, 0);
 
-      const effectCanvas = drawImpressionEffect(flip, w, h);
+      const usePaper = document.getElementById('paperEffect').checked;
+      const effectCanvas = usePaper
+        ? drawImpressionEffect(flip, w, h)
+        : drawElectronicEffect(flip, w, h);
       ctxImpression.drawImage(effectCanvas, 0, 0);
 
       URL.revokeObjectURL(url);
@@ -818,6 +873,7 @@ function scheduleUpdate() {
 // localStorage: save all params
 function saveParams() {
   const params = getParams();
+  params.paperEffect = document.getElementById('paperEffect').checked;
   try { localStorage.setItem('stamp_params', JSON.stringify(params)); } catch(e) {}
 }
 
@@ -828,8 +884,12 @@ function restoreParams() {
     if (!saved) return;
     const params = JSON.parse(saved);
     for (const key in params) {
-      const el = document.getElementById(key);
-      if (el) el.value = params[key];
+      if (key === 'paperEffect') {
+        document.getElementById('paperEffect').checked = params[key];
+      } else {
+        const el = document.getElementById(key);
+        if (el) el.value = params[key];
+      }
     }
   } catch(e) {}
 }
@@ -838,6 +898,9 @@ function restoreParams() {
 document.querySelectorAll('input[type="range"], input[type="text"]').forEach(el => {
   el.addEventListener('input', scheduleUpdate);
 });
+
+// Bind checkbox
+document.getElementById('paperEffect').addEventListener('change', scheduleUpdate);
 
 // Generate STL
 generateBtn.addEventListener('click', async () => {
@@ -879,6 +942,7 @@ resetBtn.addEventListener('click', () => {
       el.value = defaultParams[key];
     }
   }
+  document.getElementById('paperEffect').checked = true;
   try { localStorage.removeItem('stamp_params'); } catch(e) {}
   scheduleUpdate();
 });
