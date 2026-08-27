@@ -345,6 +345,12 @@ def sitemap_xml():
     return content, 200, {'Content-Type': 'application/xml; charset=utf-8'}
 
 
+@app.route('/google<ver_code>.html')
+def google_verification(ver_code):
+    """Google Search Console verification file endpoint."""
+    return f"google-site-verification: google{ver_code}.html", 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+
 # ========== HTML Template ==========
 
 HTML_TEMPLATE = r"""
