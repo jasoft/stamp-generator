@@ -635,10 +635,10 @@ HTML_TEMPLATE = r"""
         <input type="range" id="feat_h" min="0.3" max="3" step="0.1" value="1">
       </div>
       <div class="control">
-        <label>笔画加粗 <span class="val" id="stroke_thicken_val">0.25 mm</span></label>
-        <input type="range" id="stroke_thicken" min="0" max="0.6" step="0.05" value="0.25">
+        <label>笔画加粗 <span class="val" id="stroke_thicken_val">0.40 mm</span></label>
+        <input type="range" id="stroke_thicken" min="0" max="0.8" step="0.05" value="0.4">
       </div>
-      <p class="hint">STL 精度越细文字越清晰，建议 0.04-0.05mm。加粗笔画防止切片缺边少角。</p>
+      <p class="hint">STL 精度越细文字越清晰，建议 0.04-0.05mm。加粗笔画防止切片缺边少角（0.04mm 喷头建议 0.4mm+）。</p>
     </div>
 
     <button class="generate-btn" id="generateBtn">生成 STL 文件</button>
@@ -682,7 +682,7 @@ const defaultParams = {
   num_start: 140,
   num_span: 80,
   star_r: 7,
-  stroke_thicken: 0.25
+  stroke_thicken: 0.4
 };
 
 function getParams() {
