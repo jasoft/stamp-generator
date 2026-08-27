@@ -643,6 +643,7 @@ HTML_TEMPLATE = r"""
 
     <button class="generate-btn" id="generateBtn">生成 STL 文件</button>
     <div class="btn-row">
+      <button class="btn-secondary" id="downloadImgBtn">下载盖印图片</button>
       <button class="btn-secondary" id="resetBtn">恢复默认</button>
     </div>
     <p class="hint" style="margin-top:12px;">
@@ -659,6 +660,7 @@ const ctxImpression = canvasImpression.getContext('2d');
 const previewInfo = document.getElementById('previewInfo');
 const generateBtn = document.getElementById('generateBtn');
 const resetBtn = document.getElementById('resetBtn');
+const downloadImgBtn = document.getElementById('downloadImgBtn');
 
 let debounceTimer = null;
 let isGenerating = false;
@@ -949,6 +951,15 @@ generateBtn.addEventListener('click', async () => {
     generateBtn.disabled = false;
     generateBtn.textContent = '生成 STL 文件';
   }
+});
+
+// Download impression image
+downloadImgBtn.addEventListener('click', () => {
+  const link = document.createElement('a');
+  const ts = new Date().toISOString().slice(0, 10);
+  link.download = `盖章效果_${ts}.png`;
+  link.href = canvasImpression.toDataURL('image/png');
+  link.click();
 });
 
 // Reset
