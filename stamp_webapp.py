@@ -71,7 +71,9 @@ def draw_arc_text(img, cx, cy, text, font, tile, arc_r_px,
 
 def render_stamp(params, res_mm=0.1):
     """Render 2D stamp image from parameters.
-    Returns: PIL Image (grayscale, white features on black background)
+    Returns: (combined_image, text_only_image)
+    - combined: all features (ring + star + text + number)
+    - text_only: just text + number (for separate 3D height)
     """
     diameter = params.get('diameter', 40.0)
     ring_width = params.get('ring_width', 1.2)
@@ -90,49 +92,54 @@ def render_stamp(params, res_mm=0.1):
 
     n = int(diameter / res_mm) + 1
     radius = diameter / 2.0
-    img = Image.new('L', (n, n), 0)
-    draw = ImageDraw.Draw(img)
     cx = cy = n / 2
 
-    # Ring border
+    # Render ring + star on base image
+    img_base = Image.new('L', (n, n), 0)
+    draw_base = ImageDraw.Draw(img_base)
     r_out = radius / res_mm
     r_in = (radius - ring_width) / res_mm
-    draw.ellipse([cx - r_out, cy - r_out, cx + r_out, cy + r_out], fill=255)
-    draw.ellipse([cx - r_in, cy - r_in, cx + r_in, cy + r_in], fill=0)
-
-    # Star
+    draw_base.ellipse([cx - r_out, cy - r_out, cx + r_out, cy + r_out], fill=255)
+    draw_base.ellipse([cx - r_in, cy - r_in, cx + r_in, cy + r_in], fill=0)
     s_out = star_r / res_mm
     s_in = s_out * math.sin(math.radians(18)) / math.sin(math.radians(126))
-    draw_star(draw, cx, cy, s_out, s_in)
+    draw_star(draw_base, cx, cy, s_out, s_in)
 
-    # Company name (top arc, outward)
+    # Render text + number on separate image
+    img_text = Image.new('L', (n, n), 0)
     font_px = max(8, int(text_size / res_mm))
     font = ImageFont.truetype(FONT_PATH, font_px)
-    draw_arc_text(img, cx, cy, company, font, font_px * 3,
+    draw_arc_text(img_text, cx, cy, company, font, font_px * 3,
                   text_radius / res_mm, text_start, text_span,
                   clockwise=True, inward=False)
-
-    # Registration number (bottom arc, inward)
     npx = max(6, int(num_size / res_mm))
     nfont = ImageFont.truetype(FONT_PATH, npx)
-    draw_arc_text(img, cx, cy, reg_num, nfont, npx * 3,
+    draw_arc_text(img_text, cx, cy, reg_num, nfont, npx * 3,
                   num_radius / res_mm, num_start, num_span,
                   clockwise=True, inward=True)
 
-    # Dilate features to ensure minimum stroke width for 3D printing.
-    # FDM printers typically need features >= 0.4mm (nozzle diameter).
-    # Each MaxFilter(3) pass expands white pixels by ~1 pixel.
+    # Dilate both images
     dilate_px = max(0, int(round(stroke_thicken / res_mm)))
     for _ in range(dilate_px):
-        img = img.filter(ImageFilter.MaxFilter(3))
+        img_base = img_base.filter(ImageFilter.MaxFilter(3))
+        img_text = img_text.filter(ImageFilter.MaxFilter(3))
+
+    # Combine for preview
+    arr_base = np.array(img_base)
+    arr_text = np.array(img_text)
+    img_combined = Image.fromarray(np.maximum(arr_base, arr_text).astype(np.uint8))
 
     # Flip for stamp face
-    img = img.transpose(Image.FLIP_LEFT_RIGHT)
-    return img
+    img_combined = img_combined.transpose(Image.FLIP_LEFT_RIGHT)
+    img_text = img_text.transpose(Image.FLIP_LEFT_RIGHT)
+
+    return img_combined, img_text
 
 
-def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.1):
-    """Build a watertight mesh from 2D feature mask."""
+def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.1, text_mask=None, text_height=None):
+    """Build a watertight mesh from 2D feature mask.
+    If text_mask and text_height are provided, text features get a different height.
+    """
     n = arr_2d.shape[0]
     radius = diameter / 2.0
     cx = cy = n / 2
@@ -144,6 +151,8 @@ def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.1):
     hmap = np.zeros((n, n), dtype=np.float32)
     hmap[circle] = base_h
     hmap[arr_2d & circle] = base_h + feat_h
+    if text_mask is not None and text_height is not None:
+        hmap[text_mask & circle] = base_h + text_height
 
     # Vertices
     j_grid, i_grid = np.meshgrid(np.arange(n), np.arange(n))
@@ -277,8 +286,7 @@ def index():
 @app.route('/api/preview', methods=['POST'])
 def api_preview():
     params = request.get_json(force=True)
-    img = render_stamp(params, res_mm=0.1)
-    # Convert to PNG
+    img, _ = render_stamp(params, res_mm=0.1)
     buf = io.BytesIO()
     img.save(buf, format='PNG')
     buf.seek(0)
@@ -291,11 +299,14 @@ def api_generate_stl():
     diameter = params.get('diameter', 40.0)
     base_h = params.get('base_h', 3.0)
     feat_h = params.get('feat_h', 1.0)
+    text_height = params.get('text_height', feat_h)
     res_mm = params.get('resolution', 0.1)
 
-    img = render_stamp(params, res_mm=res_mm)
-    arr = np.array(img) > 127
-    verts, faces = build_mesh(arr, diameter, base_h, feat_h, res_mm=res_mm)
+    img_combined, img_text = render_stamp(params, res_mm=res_mm)
+    arr = np.array(img_combined) > 127
+    text_arr = np.array(img_text) > 127
+    verts, faces = build_mesh(arr, diameter, base_h, feat_h, res_mm=res_mm,
+                               text_mask=text_arr, text_height=text_height)
 
     # Center at origin
     verts[:, 0] -= verts[:, 0].mean()
@@ -538,10 +549,6 @@ HTML_TEMPLATE = r"""
         <input type="range" id="base_h" min="1" max="8" step="0.5" value="3">
       </div>
       <div class="control">
-        <label>凸起高度 <span class="val" id="feat_h_val">1.0 mm</span></label>
-        <input type="range" id="feat_h" min="0.3" max="3" step="0.1" value="1">
-      </div>
-      <div class="control">
         <label>边框宽度 <span class="val" id="ring_width_val">1.2 mm</span></label>
         <input type="range" id="ring_width" min="0.5" max="3" step="0.1" value="1.2">
       </div>
@@ -598,10 +605,18 @@ HTML_TEMPLATE = r"""
     <div class="section">
       <h3>打印优化</h3>
       <div class="control">
+        <label>边框/星高度 <span class="val" id="feat_h_val">1.0 mm</span></label>
+        <input type="range" id="feat_h" min="0.3" max="3" step="0.1" value="1">
+      </div>
+      <div class="control">
+        <label>文字高度 <span class="val" id="text_height_val">1.5 mm</span></label>
+        <input type="range" id="text_height" min="0.3" max="3" step="0.1" value="1.5">
+      </div>
+      <div class="control">
         <label>笔画加粗 <span class="val" id="stroke_thicken_val">0.25 mm</span></label>
         <input type="range" id="stroke_thicken" min="0" max="0.6" step="0.05" value="0.25">
       </div>
-      <p class="hint">加粗笔画可防止切片时文字缺边少角。建议 0.2-0.3mm（适配 0.4mm 喷嘴）。</p>
+      <p class="hint">文字可单独设高，比边框/星更高以盖印更清晰。加粗笔画防止切片缺边少角（0.2-0.3mm 适配 0.4mm 喷嘴）。</p>
     </div>
 
     <button class="generate-btn" id="generateBtn">生成 STL 文件</button>
@@ -633,6 +648,7 @@ const defaultParams = {
   diameter: 40,
   base_h: 3,
   feat_h: 1,
+  text_height: 1.5,
   ring_width: 1.2,
   text_size: 4.5,
   text_radius: 15.5,
@@ -653,6 +669,7 @@ function getParams() {
     diameter: parseFloat(document.getElementById('diameter').value),
     base_h: parseFloat(document.getElementById('base_h').value),
     feat_h: parseFloat(document.getElementById('feat_h').value),
+    text_height: parseFloat(document.getElementById('text_height').value),
     ring_width: parseFloat(document.getElementById('ring_width').value),
     text_size: parseFloat(document.getElementById('text_size').value),
     text_radius: parseFloat(document.getElementById('text_radius').value),
@@ -672,6 +689,7 @@ function updateLabels() {
   document.getElementById('diameter_val').textContent = params.diameter.toFixed(1) + ' mm';
   document.getElementById('base_h_val').textContent = params.base_h.toFixed(1) + ' mm';
   document.getElementById('feat_h_val').textContent = params.feat_h.toFixed(1) + ' mm';
+  document.getElementById('text_height_val').textContent = params.text_height.toFixed(1) + ' mm';
   document.getElementById('ring_width_val').textContent = params.ring_width.toFixed(1) + ' mm';
   document.getElementById('text_size_val').textContent = params.text_size.toFixed(1) + ' mm';
   document.getElementById('text_radius_val').textContent = params.text_radius.toFixed(1) + ' mm';
@@ -795,7 +813,7 @@ async function updatePreview() {
       URL.revokeObjectURL(url);
     };
     img.src = url;
-    previewInfo.textContent = `直径 ${params.diameter.toFixed(1)}mm · 总高 ${(params.base_h + params.feat_h).toFixed(1)}mm`;
+    previewInfo.textContent = `直径 ${params.diameter.toFixed(1)}mm · 总高 ${Math.max(params.base_h + params.feat_h, params.base_h + params.text_height).toFixed(1)}mm`;
   } catch (e) {
     previewInfo.textContent = '预览加载失败';
   }
@@ -803,8 +821,28 @@ async function updatePreview() {
 
 function scheduleUpdate() {
   updateLabels();
+  saveParams();
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(updatePreview, 80);
+}
+
+// localStorage: save all params
+function saveParams() {
+  const params = getParams();
+  try { localStorage.setItem('stamp_params', JSON.stringify(params)); } catch(e) {}
+}
+
+// localStorage: restore all params
+function restoreParams() {
+  try {
+    const saved = localStorage.getItem('stamp_params');
+    if (!saved) return;
+    const params = JSON.parse(saved);
+    for (const key in params) {
+      const el = document.getElementById(key);
+      if (el) el.value = params[key];
+    }
+  } catch(e) {}
 }
 
 // Bind all sliders and text inputs
@@ -852,10 +890,12 @@ resetBtn.addEventListener('click', () => {
       el.value = defaultParams[key];
     }
   }
+  try { localStorage.removeItem('stamp_params'); } catch(e) {}
   scheduleUpdate();
 });
 
-// Initial render
+// Restore saved settings then initial render
+restoreParams();
 updateLabels();
 updatePreview();
 </script>
