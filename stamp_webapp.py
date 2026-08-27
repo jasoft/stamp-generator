@@ -132,8 +132,36 @@ def render_stamp(params, res_mm=0.1):
     return img
 
 
-def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.1):
-    """Build a watertight mesh from 2D feature mask."""
+def _greedy_mesh(mask):
+    """Greedily merge True pixels into rectangular quads.
+    Returns list of (y0, x0, y1, x1) tuples."""
+    n_rows, n_cols = mask.shape
+    visited = np.zeros((n_rows, n_cols), dtype=bool)
+    quads = []
+    for y in range(n_rows):
+        x = 0
+        while x < n_cols:
+            if visited[y, x] or not mask[y, x]:
+                x += 1
+                continue
+            w = 1
+            while x + w < n_cols and mask[y, x + w] and not visited[y, x + w]:
+                w += 1
+            h = 1
+            while y + h < n_rows:
+                row = mask[y + h, x:x + w]
+                vis = visited[y + h, x:x + w]
+                if not np.all(row) or np.any(vis):
+                    break
+                h += 1
+            visited[y:y + h, x:x + w] = True
+            quads.append((y, x, y + h, x + w))
+            x += w
+    return quads
+
+
+def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.05):
+    """Build a watertight mesh using greedy meshing for compact file size."""
     n = arr_2d.shape[0]
     radius = diameter / 2.0
     cx = cy = n / 2
@@ -146,101 +174,78 @@ def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.1):
     hmap[circle] = base_h
     hmap[arr_2d & circle] = base_h + feat_h
 
-    # Vertices
-    j_grid, i_grid = np.meshgrid(np.arange(n), np.arange(n))
-    x = (j_grid - n / 2) * res_mm
-    y = (n / 2 - i_grid) * res_mm
+    verts = []
+    faces = []
 
-    top_verts = np.stack([x.ravel(), y.ravel(), hmap.ravel()], axis=1).astype(np.float32)
-    bot_verts = np.stack([x.ravel(), y.ravel(), np.zeros(n * n)], axis=1).astype(np.float32)
-    all_verts = np.vstack([top_verts, bot_verts])
-    NN = n * n
+    def add_top_quad(y0, x0, y1, x1, h):
+        base = len(verts) // 3
+        px0 = (x0 - n / 2) * res_mm
+        px1 = (x1 - n / 2) * res_mm
+        py0 = (n / 2 - y0) * res_mm
+        py1 = (n / 2 - y1) * res_mm
+        verts.extend([px0, py0, h, px1, py0, h, px1, py1, h, px0, py1, h])
+        faces.extend([base, base+3, base+2, base, base+2, base+1])
 
-    # Cell mask
-    h00 = hmap[:-1, :-1]
-    h01 = hmap[:-1, 1:]
-    h10 = hmap[1:, :-1]
-    h11 = hmap[1:, 1:]
-    cell = (h00 > 0) & (h01 > 0) & (h10 > 0) & (h11 > 0)
+    def add_bottom_quad(y0, x0, y1, x1):
+        base = len(verts) // 3
+        px0 = (x0 - n / 2) * res_mm
+        px1 = (x1 - n / 2) * res_mm
+        py0 = (n / 2 - y0) * res_mm
+        py1 = (n / 2 - y1) * res_mm
+        verts.extend([px0, py0, 0, px1, py0, 0, px1, py1, 0, px0, py1, 0])
+        faces.extend([base, base+1, base+2, base, base+2, base+3])
 
-    vi00 = np.arange(n * n).reshape(n, n)[:-1, :-1]
-    vi01 = np.arange(n * n).reshape(n, n)[:-1, 1:]
-    vi10 = np.arange(n * n).reshape(n, n)[1:, :-1]
-    vi11 = np.arange(n * n).reshape(n, n)[1:, 1:]
+    def add_wall(x0, y0, x1, y1, z_low, z_high):
+        base = len(verts) // 3
+        px0 = (x0 - n / 2) * res_mm
+        px1 = (x1 - n / 2) * res_mm
+        py0 = (n / 2 - y0) * res_mm
+        py1 = (n / 2 - y1) * res_mm
+        verts.extend([px0, py0, z_low, px1, py1, z_low, px1, py1, z_high, px0, py0, z_high])
+        faces.extend([base, base+3, base+2, base, base+2, base+1])
 
-    m = cell.ravel()
-    v00 = vi00.ravel()[m]
-    v01 = vi01.ravel()[m]
-    v10 = vi10.ravel()[m]
-    v11 = vi11.ravel()[m]
+    # Top surface: greedy mesh each height level
+    for h in [base_h, base_h + feat_h]:
+        mask = (hmap == h)
+        if not mask.any():
+            continue
+        for (y0, x0, y1, x1) in _greedy_mesh(mask):
+            add_top_quad(y0, x0, y1, x1, h)
 
-    # Top faces
-    top_f = np.empty((len(v00) * 2, 3), dtype=np.int64)
-    top_f[0::2] = np.stack([v00, v10, v11], axis=1)
-    top_f[1::2] = np.stack([v00, v11, v01], axis=1)
+    # Bottom surface: area where hmap > 0
+    bottom_mask = hmap > 0
+    for (y0, x0, y1, x1) in _greedy_mesh(bottom_mask):
+        add_bottom_quad(y0, x0, y1, x1)
 
-    # Bottom faces
-    b00, b01, b10, b11 = v00 + NN, v01 + NN, v10 + NN, v11 + NN
-    bot_f = np.empty((len(v00) * 2, 3), dtype=np.int64)
-    bot_f[0::2] = np.stack([b00, b11, b10], axis=1)
-    bot_f[1::2] = np.stack([b00, b01, b11], axis=1)
+    # Walls: horizontal boundaries (between rows y and y+1)
+    for y in range(n - 1):
+        x = 0
+        while x < n:
+            ha = hmap[y, x]
+            hb = hmap[y + 1, x]
+            if ha == hb:
+                x += 1
+                continue
+            x0 = x
+            while x < n and hmap[y, x] == ha and hmap[y + 1, x] == hb:
+                x += 1
+            add_wall(x0, y + 1, x, y + 1, min(ha, hb), max(ha, hb))
 
-    # Side walls
-    wall_faces = []
+    # Walls: vertical boundaries (between columns x and x+1)
+    for x in range(n - 1):
+        y = 0
+        while y < n:
+            ha = hmap[y, x]
+            hb = hmap[y, x + 1]
+            if ha == hb:
+                y += 1
+                continue
+            y0 = y
+            while y < n and hmap[y, x] == ha and hmap[y, x + 1] == hb:
+                y += 1
+            add_wall(x + 1, y0, x + 1, y, min(ha, hb), max(ha, hb))
 
-    def add_wall(vt1, vt2, vb1, vb2, reverse=False):
-        if reverse:
-            wall_faces.append(np.array([[vt1, vb2, vt2], [vt1, vb1, vb2]], dtype=np.int64))
-        else:
-            wall_faces.append(np.array([[vt1, vt2, vb2], [vt1, vb2, vb1]], dtype=np.int64))
-
-    # Left wall
-    left = np.zeros_like(cell)
-    left[:, 1:] = cell[:, 1:] & ~cell[:, :-1]
-    left[:, 0] = cell[:, 0]
-    li, lj = np.where(left)
-    for k in range(len(li)):
-        i, j = li[k], lj[k]
-        vt1 = i * n + j
-        vt2 = (i + 1) * n + j
-        add_wall(vt1, vt2, vt1 + NN, vt2 + NN, reverse=True)
-
-    # Right wall
-    right = np.zeros_like(cell)
-    right[:, :-1] = cell[:, :-1] & ~cell[:, 1:]
-    right[:, -1] = cell[:, -1]
-    ri, rj = np.where(right)
-    for k in range(len(ri)):
-        i, j = ri[k], rj[k]
-        vt1 = i * n + (j + 1)
-        vt2 = (i + 1) * n + (j + 1)
-        add_wall(vt1, vt2, vt1 + NN, vt2 + NN, reverse=False)
-
-    # Top wall
-    topw = np.zeros_like(cell)
-    topw[1:, :] = cell[1:, :] & ~cell[:-1, :]
-    topw[0, :] = cell[0, :]
-    ti, tj = np.where(topw)
-    for k in range(len(ti)):
-        i, j = ti[k], tj[k]
-        vt1 = i * n + j
-        vt2 = i * n + (j + 1)
-        add_wall(vt1, vt2, vt1 + NN, vt2 + NN, reverse=False)
-
-    # Bottom wall
-    btm = np.zeros_like(cell)
-    btm[:-1, :] = cell[:-1, :] & ~cell[1:, :]
-    btm[-1, :] = cell[-1, :]
-    bi, bj = np.where(btm)
-    for k in range(len(bi)):
-        i, j = bi[k], bj[k]
-        vt1 = (i + 1) * n + j
-        vt2 = (i + 1) * n + (j + 1)
-        add_wall(vt1, vt2, vt1 + NN, vt2 + NN, reverse=True)
-
-    wall_f = np.vstack(wall_faces) if wall_faces else np.zeros((0, 3), dtype=np.int64)
-    all_faces = np.vstack([top_f, bot_f, wall_f])
-    return all_verts, all_faces
+    return np.array(verts, dtype=np.float32).reshape(-1, 3), np.array(faces, dtype=np.int32).reshape(-1, 3)
 
 
 def write_binary_stl_bytes(vertices, faces):
@@ -291,7 +296,7 @@ def api_generate_stl():
     diameter = params.get('diameter', 40.0)
     base_h = params.get('base_h', 3.0)
     feat_h = params.get('feat_h', 1.0)
-    res_mm = params.get('resolution', 0.1)
+    res_mm = params.get('resolution', 0.05)
 
     img = render_stamp(params, res_mm=res_mm)
     arr = np.array(img) > 127
@@ -617,6 +622,10 @@ HTML_TEMPLATE = r"""
     <div class="section">
       <h3>打印优化</h3>
       <div class="control">
+        <label>STL 精度 <span class="val" id="resolution_val">0.05 mm</span></label>
+        <input type="range" id="resolution" min="0.02" max="0.1" step="0.01" value="0.05">
+      </div>
+      <div class="control">
         <label>凸起高度 <span class="val" id="feat_h_val">1.0 mm</span></label>
         <input type="range" id="feat_h" min="0.3" max="3" step="0.1" value="1">
       </div>
@@ -624,7 +633,7 @@ HTML_TEMPLATE = r"""
         <label>笔画加粗 <span class="val" id="stroke_thicken_val">0.25 mm</span></label>
         <input type="range" id="stroke_thicken" min="0" max="0.6" step="0.05" value="0.25">
       </div>
-      <p class="hint">加粗笔画可防止切片时文字缺边少角（0.2-0.3mm 适配 0.4mm 喷嘴）。</p>
+      <p class="hint">STL 精度越细文字越清晰，建议 0.04-0.05mm。加粗笔画防止切片缺边少角。</p>
     </div>
 
     <button class="generate-btn" id="generateBtn">生成 STL 文件</button>
@@ -657,6 +666,7 @@ const defaultParams = {
   base_h: 3,
   feat_h: 1,
   text_height: 1,
+  resolution: 0.05,
   ring_width: 1.2,
   text_size: 4.5,
   text_radius: 15.5,
@@ -689,6 +699,7 @@ function getParams() {
     num_span: parseFloat(document.getElementById('num_span').value),
     star_r: parseFloat(document.getElementById('star_r').value),
     stroke_thicken: parseFloat(document.getElementById('stroke_thicken').value),
+    resolution: parseFloat(document.getElementById('resolution').value),
   };
 }
 
@@ -697,6 +708,7 @@ function updateLabels() {
   document.getElementById('diameter_val').textContent = params.diameter.toFixed(1) + ' mm';
   document.getElementById('base_h_val').textContent = params.base_h.toFixed(1) + ' mm';
   document.getElementById('feat_h_val').textContent = params.feat_h.toFixed(1) + ' mm';
+  document.getElementById('resolution_val').textContent = params.resolution.toFixed(2) + ' mm';
   document.getElementById('text_height_val').textContent = params.text_height.toFixed(2) + 'x';
   document.getElementById('ring_width_val').textContent = params.ring_width.toFixed(1) + ' mm';
   document.getElementById('text_size_val').textContent = params.text_size.toFixed(1) + ' mm';
