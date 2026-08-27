@@ -798,10 +798,10 @@ function drawElectronicEffect(sourceImg, width, height) {
 
   for (let i = 0; i < data.length; i += 4) {
     const mask = data[i] / 255;
-    if (mask > 0.01) {
-      data[i] = r * mask;
-      data[i+1] = g * mask;
-      data[i+2] = b * mask;
+    if (mask > 0.5) {
+      data[i] = r;
+      data[i+1] = g;
+      data[i+2] = b;
       data[i+3] = 255;
     } else {
       data[i] = 255;
