@@ -8,7 +8,7 @@ import math
 import os
 import struct
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from flask import Flask, request, jsonify, send_file, render_template_string
 
 app = Flask(__name__)
@@ -86,6 +86,7 @@ def render_stamp(params, res_mm=0.1):
     num_start = params.get('num_start', 140.0)
     num_span = params.get('num_span', 80.0)
     star_r = params.get('star_r', 7.0)
+    stroke_thicken = params.get('stroke_thicken', 0.25)
 
     n = int(diameter / res_mm) + 1
     radius = diameter / 2.0
@@ -117,6 +118,13 @@ def render_stamp(params, res_mm=0.1):
     draw_arc_text(img, cx, cy, reg_num, nfont, npx * 3,
                   num_radius / res_mm, num_start, num_span,
                   clockwise=True, inward=True)
+
+    # Dilate features to ensure minimum stroke width for 3D printing.
+    # FDM printers typically need features >= 0.4mm (nozzle diameter).
+    # Each MaxFilter(3) pass expands white pixels by ~1 pixel.
+    dilate_px = max(0, int(round(stroke_thicken / res_mm)))
+    for _ in range(dilate_px):
+        img = img.filter(ImageFilter.MaxFilter(3))
 
     # Flip for stamp face
     img = img.transpose(Image.FLIP_LEFT_RIGHT)
@@ -587,6 +595,15 @@ HTML_TEMPLATE = r"""
       </div>
     </div>
 
+    <div class="section">
+      <h3>打印优化</h3>
+      <div class="control">
+        <label>笔画加粗 <span class="val" id="stroke_thicken_val">0.25 mm</span></label>
+        <input type="range" id="stroke_thicken" min="0" max="0.6" step="0.05" value="0.25">
+      </div>
+      <p class="hint">加粗笔画可防止切片时文字缺边少角。建议 0.2-0.3mm（适配 0.4mm 喷嘴）。</p>
+    </div>
+
     <button class="generate-btn" id="generateBtn">生成 STL 文件</button>
     <div class="btn-row">
       <button class="btn-secondary" id="resetBtn">恢复默认</button>
@@ -625,7 +642,8 @@ const defaultParams = {
   num_radius: 16,
   num_start: 140,
   num_span: 80,
-  star_r: 7
+  star_r: 7,
+  stroke_thicken: 0.25
 };
 
 function getParams() {
@@ -645,6 +663,7 @@ function getParams() {
     num_start: parseFloat(document.getElementById('num_start').value),
     num_span: parseFloat(document.getElementById('num_span').value),
     star_r: parseFloat(document.getElementById('star_r').value),
+    stroke_thicken: parseFloat(document.getElementById('stroke_thicken').value),
   };
 }
 
@@ -663,6 +682,7 @@ function updateLabels() {
   document.getElementById('num_start_val').textContent = params.num_start + '°';
   document.getElementById('num_span_val').textContent = params.num_span + '°';
   document.getElementById('star_r_val').textContent = params.star_r.toFixed(1) + ' mm';
+  document.getElementById('stroke_thicken_val').textContent = params.stroke_thicken.toFixed(2) + ' mm';
 }
 
 function drawImpressionEffect(sourceImg, width, height) {
