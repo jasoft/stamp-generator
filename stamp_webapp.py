@@ -195,14 +195,17 @@ def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.05):
         verts.extend([px0, py0, 0, px1, py0, 0, px1, py1, 0, px0, py1, 0])
         faces.extend([base, base+1, base+2, base, base+2, base+3])
 
-    def add_wall(x0, y0, x1, y1, z_low, z_high):
+    def add_wall(x0, y0, x1, y1, z_low, z_high, reverse=False):
         base = len(verts) // 3
         px0 = (x0 - n / 2) * res_mm
         px1 = (x1 - n / 2) * res_mm
         py0 = (n / 2 - y0) * res_mm
         py1 = (n / 2 - y1) * res_mm
         verts.extend([px0, py0, z_low, px1, py1, z_low, px1, py1, z_high, px0, py0, z_high])
-        faces.extend([base, base+3, base+2, base, base+2, base+1])
+        if reverse:
+            faces.extend([base, base+1, base+2, base, base+2, base+3])
+        else:
+            faces.extend([base, base+3, base+2, base, base+2, base+1])
 
     # Top surface: greedy mesh each height level
     for h in [base_h, base_h + feat_h]:
@@ -218,7 +221,8 @@ def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.05):
         add_bottom_quad(y0, x0, y1, x1)
 
     # Walls: horizontal boundaries (between rows y and y+1)
-    for y in range(n - 1):
+    hdiff = hmap[:-1, :] != hmap[1:, :]
+    for y in np.where(hdiff.any(axis=1))[0]:
         x = 0
         while x < n:
             ha = hmap[y, x]
@@ -229,10 +233,11 @@ def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.05):
             x0 = x
             while x < n and hmap[y, x] == ha and hmap[y + 1, x] == hb:
                 x += 1
-            add_wall(x0, y + 1, x, y + 1, min(ha, hb), max(ha, hb))
+            add_wall(x0, y + 1, x, y + 1, min(ha, hb), max(ha, hb), reverse=(ha > hb))
 
     # Walls: vertical boundaries (between columns x and x+1)
-    for x in range(n - 1):
+    vdiff = hmap[:, :-1] != hmap[:, 1:]
+    for x in np.where(vdiff.any(axis=0))[0]:
         y = 0
         while y < n:
             ha = hmap[y, x]
@@ -243,7 +248,7 @@ def build_mesh(arr_2d, diameter, base_h, feat_h, res_mm=0.05):
             y0 = y
             while y < n and hmap[y, x] == ha and hmap[y, x + 1] == hb:
                 y += 1
-            add_wall(x + 1, y0, x + 1, y, min(ha, hb), max(ha, hb))
+            add_wall(x + 1, y0, x + 1, y, min(ha, hb), max(ha, hb), reverse=(ha < hb))
 
     return np.array(verts, dtype=np.float32).reshape(-1, 3), np.array(faces, dtype=np.int32).reshape(-1, 3)
 
