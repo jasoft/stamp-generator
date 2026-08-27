@@ -321,6 +321,30 @@ def api_generate_stl():
                      as_attachment=True, download_name=filename)
 
 
+@app.route('/robots.txt')
+def robots_txt():
+    content = """User-agent: *
+Allow: /
+Sitemap: https://stampmaker.ursoftware.com/sitemap.xml
+"""
+    return content, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    content = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://stampmaker.ursoftware.com/</loc>
+    <lastmod>2026-08-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
+"""
+    return content, 200, {'Content-Type': 'application/xml; charset=utf-8'}
+
+
 # ========== HTML Template ==========
 
 HTML_TEMPLATE = r"""
@@ -329,7 +353,48 @@ HTML_TEMPLATE = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>公章 STL 生成器</title>
+<title>公章 STL 生成器 - 在线制作可打印3D公章模型 | StampMaker</title>
+<meta name="description" content="免费在线公章STL生成器，支持自定义公司名称、注册号、五角星等参数，实时预览盖印效果，一键生成可3D打印的STL文件。适用于FDM和光固化打印机。">
+<meta name="keywords" content="公章,STL生成器,3D打印,印章,电子公章,在线生成,3D模型,公章制作,印章生成器,stamp generator">
+<meta name="author" content="StampMaker">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://stampmaker.ursoftware.com/">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://stampmaker.ursoftware.com/">
+<meta property="og:title" content="公章 STL 生成器 - 在线制作可打印3D公章模型">
+<meta property="og:description" content="免费在线公章STL生成器，支持自定义公司名称、注册号、五角星等参数，实时预览盖印效果，一键生成可3D打印的STL文件。">
+<meta property="og:image" content="https://stampmaker.ursoftware.com/og-image.png">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:site_name" content="StampMaker">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:url" content="https://stampmaker.ursoftware.com/">
+<meta name="twitter:title" content="公章 STL 生成器 - 在线制作可打印3D公章模型">
+<meta name="twitter:description" content="免费在线公章STL生成器，支持自定义公司名称、注册号、五角星等参数，实时预览盖印效果。">
+<meta name="twitter:image" content="https://stampmaker.ursoftware.com/og-image.png">
+
+<!-- Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "公章 STL 生成器",
+  "alternateName": "StampMaker",
+  "url": "https://stampmaker.ursoftware.com/",
+  "description": "免费在线公章STL生成器，支持自定义公司名称、注册号、五角星等参数，实时预览盖印效果，一键生成可3D打印的STL文件。",
+  "applicationCategory": "DesignApplication",
+  "operatingSystem": "Web",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "CNY"
+  },
+  "featureList": "自定义公司名称,自定义注册号,五角星,实时预览,STL导出,3D打印"
+}
+</script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; }
